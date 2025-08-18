@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小規模事業者向け管理ツール</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            font-family: 'Noto Serif JP', serif; 
+            margin: 40px; 
+            background-color: #f8f9fa; 
+            color: #333; 
+            line-height: 1.6;
+        }
+        h1, h2, h3 { color: #2c3e50; }
+        section { 
+            margin-bottom: 40px; 
+            padding: 20px; 
+            background-color: #fff; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+        }
+        button { 
+            margin: 10px 5px; 
+            padding: 12px 24px; 
+            background-color: #3498db; 
+            color: white; 
+            border: none; 
+            border-radius: 5px; 
+            cursor: pointer; 
+            transition: background-color 0.3s ease; 
+            font-size: 16px;
+        }
+        button:hover { background-color: #2980b9; }
+        input, textarea { 
+            margin: 10px 5px; 
+            padding: 10px; 
+            border: 1px solid #ddd; 
+            border-radius: 5px; 
+            width: calc(100% - 20px); 
+            font-size: 16px;
+        }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background-color: #ecf0f1; }
+        #task-list { list-style-type: none; padding: 0; }
+        #task-list li { 
+            margin-bottom: 15px; 
+            padding: 15px; 
+            background-color: #f9f9f9; 
+            border-radius: 5px; 
+            border: 1px solid #eee; 
+        }
+        .status-div { font-style: italic; color: #7f8c8d; }
+    </style>
+</head>
+<body>
+    <h1>小規模事業者向け管理ツール</h1>
+    
+    <!-- ユーザー選択 -->
+    <section id="user-selection">
+        <h2>ユーザー選択</h2>
+        <label>従業員ID (1-4) または 管理者 (admin):</label>
+        <input type="text" id="user-id" placeholder="例: 1 or admin">
+        <button onclick="login()">ログイン</button>
+    </section>
+
+    <!-- 勤怠管理 -->
+    <section id="attendance" style="display: none;">
+        <h2>勤怠管理</h2>
+        <button onclick="checkIn()">出勤</button>
+        <button onclick="checkOut()">退勤</button>
+        <div id="attendance-status" class="status-div"></div>
+        <h3>記録出力</h3>
+        <label>開始日:</label><input type="date" id="start-date-att">
+        <label>終了日:</label><input type="date" id="end-date-att">
+        <button onclick="exportAttendanceCSV()">CSV出力</button>
+    </section>
+
+    <!-- タスク管理 -->
+    <section id="tasks" style="display: none;">
+        <h2>タスク管理</h2>
+        <div id="employee-tasks" style="display: none;">
+            <h3>今日のタスク</h3>
+            <ul id="task-list"></ul>
+            <textarea id="new-task" placeholder="新規タスク入力"></textarea>
+            <button onclick="addEmployeeTask()">タスク追加</button>
+        </div>
+        <div id="admin-tasks" style="display: none;">
+            <h3>従業員タスク割り当て</h3>
+            <label>従業員ID:</label><input type="text" id="assign-user-id" placeholder="1-4">
+            <textarea id="assign-task" placeholder="タスク内容"></textarea>
+            <button onclick="assignTask()">割り当て</button>
+        </div>
+    </section>
+
+    <!-- 特定PC作業記録 -->
+    <section id="pc-usage" style="display: none;">
+        <h2>特定PC作業記録</h2>
+        <button onclick="startPCWork()">作業開始</button>
+        <button onclick="endPCWork()">作業終了</button>
+        <div id="pc-status" class="status-div"></div>
+        <h3>記録出力</h3>
+        <label>開始日:</label><input type="date" id="start-date-pc">
+        <label>終了日:</label><input type="date" id="end-date-pc">
+        <button onclick="exportPCCSV()">CSV出力</button>
+    </section>
+
+    <!-- ログアウトボタン -->
+    <section id="logout-section" style="display: none; text-align: center;">
+        <button onclick="logout()">ログアウト</button>
+    </section>
+
+    <script>
+        let currentUser = null;
+        let isAdmin = false;
+        const attendanceData = JSON.parse(localStorage.getItem('attendanceData')) || {};
+        const taskData = JSON.parse(localStorage.getItem('taskData')) || {};
+        const pcUsageData = JSON.parse(localStorage.getItem('pcUsageData')) || {};
+
+        function login() {
+            currentUser = document.getElementById('user-id').value.trim();
+            if (currentUser === 'admin') {
+                isAdmin = true;
+                document.getElementById('admin-tasks').style.display = 'block';
+                document.getElementById('employee-tasks').style.display = 'none';
+            } else if (['1','2','3','4'].includes(currentUser)) {
+                isAdmin = false;
+                document.getElementById('employee-tasks').style.display = 'block';
+                document.getElementById('admin-tasks').style.display = 'none';
+            } else {
+                alert('無効なユーザーIDです。1-4 または admin を入力してください。');
+                return;
+            }
+            document.getElementById('user-selection').style.display = 'none';
+            document.getElementById('attendance').style.display = 'block';
+            document.getElementById('tasks').style.display = 'block';
+            document.getElementById('pc-usage').style.display = 'block';
+            document.getElementById('logout-section').style.display = 'block';
+            loadTasks();
+            updateAttendanceStatus();
+            updatePCStatus();
+        }
+
+        function logout() {
+            currentUser = null;
+            isAdmin = false;
+            document.getElementById('user-selection').style.display = 'block';
+            document.getElementById('attendance').style.display = 'none';
+            document.getElementById('tasks').style.display = 'none';
+            document.getElementById('pc-usage').style.display = 'none';
+            document.getElementById('logout-section').style.display = 'none';
+            document.getElementById('task-list').innerHTML = '';
+            document.getElementById('attendance-status').innerHTML = '';
+            document.getElementById('pc-status').innerHTML = '';
+        }
+
+        // 勤怠管理
+        function checkIn() {
+            const now = new Date();
+            if (!attendanceData[currentUser]) attendanceData[currentUser] = [];
+            attendanceData[currentUser].push({ checkIn: now.toISOString(), checkOut: null });
+            saveAttendance();
+            updateAttendanceStatus();
+        }
+
+        function checkOut() {
+            const now = new Date();
+            if (!attendanceData[currentUser] || attendanceData[currentUser].length === 0) return alert('出勤していません。');
+            const last = attendanceData[currentUser][attendanceData[currentUser].length - 1];
+            if (last.checkOut) return alert('既に退勤しています。');
+            last.checkOut = now.toISOString();
+            saveAttendance();
+            updateAttendanceStatus();
+        }
+
+        function updateAttendanceStatus() {
+            const status = document.getElementById('attendance-status');
+            if (!attendanceData[currentUser] || attendanceData[currentUser].length === 0) {
+                status.innerHTML = '今日の記録: なし';
+                return;
+            }
+            const last = attendanceData[currentUser][attendanceData[currentUser].length - 1];
+            status.innerHTML = `出勤: ${last.checkIn ? new Date(last.checkIn).toLocaleString() : 'なし'}<br>退勤: ${last.checkOut ? new Date(last.checkOut).toLocaleString() : '未退勤'}`;
+        }
+
+        function saveAttendance() {
+            localStorage.setItem('attendanceData', JSON.stringify(attendanceData));
+        }
+
+        function exportAttendanceCSV() {
+            const start = new Date(document.getElementById('start-date-att').value);
+            const end = new Date(document.getElementById('end-date-att').value);
+            if (isNaN(start) || isNaN(end)) return alert('日付を指定してください。');
+            end.setDate(end.getDate() + 1); // 終了日を含む
+
+            let csv = 'ユーザー,出勤,退勤\n';
+            Object.keys(attendanceData).forEach(user => {
+                attendanceData[user].forEach(record => {
+                    const checkInDate = new Date(record.checkIn);
+                    if (checkInDate >= start && checkInDate < end) {
+                        csv += `${user},${record.checkIn || ''},${record.checkOut || ''}\n`;
+                    }
+                });
+            });
+            downloadCSV(csv, 'attendance.csv');
+        }
+
+        // タスク管理
+        function loadTasks() {
+            if (!taskData[currentUser]) taskData[currentUser] = [];
+            const list = document.getElementById('task-list');
+            list.innerHTML = '';
+            const today = new Date().toDateString();
+            taskData[currentUser].filter(task => !task.completed).forEach((task, index) => {
+                const li = document.createElement('li');
+                li.innerHTML = `${task.text} (開始: ${task.date}) <button onclick="completeTask(${index})">完了</button>`;
+                list.appendChild(li);
+            });
+            // 未完了タスクを翌日に継続（自動的に今日の日付で表示）
+        }
+
+        function addEmployeeTask() {
+            const text = document.getElementById('new-task').value.trim();
+            if (!text) return;
+            taskData[currentUser].push({ text, date: new Date().toDateString(), completed: false });
+            saveTasks();
+            loadTasks();
+            document.getElementById('new-task').value = '';
+        }
+
+        function assignTask() {
+            if (!isAdmin) return;
+            const user = document.getElementById('assign-user-id').value.trim();
+            const text = document.getElementById('assign-task').value.trim();
+            if (!text || !['1','2','3','4'].includes(user)) return alert('無効な入力です。');
+            if (!taskData[user]) taskData[user] = [];
+            taskData[user].push({ text, date: new Date().toDateString(), completed: false });
+            saveTasks();
+            document.getElementById('assign-task').value = '';
+        }
+
+        function completeTask(index) {
+            taskData[currentUser][index].completed = true;
+            saveTasks();
+            loadTasks();
+        }
+
+        function saveTasks() {
+            localStorage.setItem('taskData', JSON.stringify(taskData));
+        }
+
+        // 特定PC作業記録
+        function startPCWork() {
+            const now = new Date();
+            if (!pcUsageData[currentUser]) pcUsageData[currentUser] = [];
+            pcUsageData[currentUser].push({ start: now.toISOString(), end: null });
+            savePCUsage();
+            updatePCStatus();
+        }
+
+        function endPCWork() {
+            const now = new Date();
+            if (!pcUsageData[currentUser] || pcUsageData[currentUser].length === 0) return alert('作業を開始していません。');
+            const last = pcUsageData[currentUser][pcUsageData[currentUser].length - 1];
+            if (last.end) return alert('既に終了しています。');
+            last.end = now.toISOString();
+            savePCUsage();
+            updatePCStatus();
+        }
+
+        function updatePCStatus() {
+            const status = document.getElementById('pc-status');
+            if (!pcUsageData[currentUser] || pcUsageData[currentUser].length === 0) {
+                status.innerHTML = '今日の記録: なし';
+                return;
+            }
+            const last = pcUsageData[currentUser][pcUsageData[currentUser].length - 1];
+            status.innerHTML = `開始: ${last.start ? new Date(last.start).toLocaleString() : 'なし'}<br>終了: ${last.end ? new Date(last.end).toLocaleString() : '未終了'}`;
+        }
+
+        function savePCUsage() {
+            localStorage.setItem('pcUsageData', JSON.stringify(pcUsageData));
+        }
+
+        function exportPCCSV() {
+            const start = new Date(document.getElementById('start-date-pc').value);
+            const end = new Date(document.getElementById('end-date-pc').value);
+            if (isNaN(start) || isNaN(end)) return alert('日付を指定してください。');
+            end.setDate(end.getDate() + 1);
+
+            let csv = 'ユーザー,開始,終了\n';
+            Object.keys(pcUsageData).forEach(user => {
+                pcUsageData[user].forEach(record => {
+                    const startDate = new Date(record.start);
+                    if (startDate >= start && startDate < end) {
+                        csv += `${user},${record.start || ''},${record.end || ''}\n`;
+                    }
+                });
+            });
+            downloadCSV(csv, 'pc_usage.csv');
+        }
+
+        // CSVダウンロード関数
+        function downloadCSV(csv, filename) {
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+            link.click();
+        }
+    </script>
+</body>
+</html>
