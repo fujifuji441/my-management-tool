@@ -53,16 +53,19 @@
             border: 1px solid #eee; 
         }
         .status-div { font-style: italic; color: #7f8c8d; }
+        #user-management { display: none; }
     </style>
 </head>
 <body>
     <h1>小規模事業者向け管理ツール</h1>
     
-    <!-- ユーザー選択 -->
+    <!-- ユーザー選択（ログイン） -->
     <section id="user-selection">
-        <h2>ユーザー選択</h2>
-        <label>従業員ID (1-4) または 管理者 (admin):</label>
-        <input type="text" id="user-id" placeholder="例: 1 or admin">
+        <h2>ログイン</h2>
+        <label>ログインID:</label>
+        <input type="text" id="login-id" placeholder="例: admin1111">
+        <label>パスワード:</label>
+        <input type="password" id="login-password" placeholder="パスワード">
         <button onclick="login()">ログイン</button>
     </section>
 
@@ -89,10 +92,20 @@
         </div>
         <div id="admin-tasks" style="display: none;">
             <h3>従業員タスク割り当て</h3>
-            <label>従業員ID:</label><input type="text" id="assign-user-id" placeholder="1-4">
+            <label>従業員ID:</label><input type="text" id="assign-user-id" placeholder="従業員ID">
             <textarea id="assign-task" placeholder="タスク内容"></textarea>
             <button onclick="assignTask()">割り当て</button>
         </div>
+    </section>
+
+    <!-- ユーザー管理 (admin専用) -->
+    <section id="user-management">
+        <h2>ユーザー管理</h2>
+        <h3>新規従業員追加/パスワード設定</h3>
+        <label>従業員ID:</label><input type="text" id="new-user-id" placeholder="新しいID">
+        <label>パスワード:</label><input type="password" id="new-user-password" placeholder="パスワード">
+        <button onclick="setUser()">設定/更新</button>
+        <div id="user-list"></div>
     </section>
 
     <!-- 特定PC作業記録 -->
@@ -118,26 +131,34 @@
         const attendanceData = JSON.parse(localStorage.getItem('attendanceData')) || {};
         const taskData = JSON.parse(localStorage.getItem('taskData')) || {};
         const pcUsageData = JSON.parse(localStorage.getItem('pcUsageData')) || {};
+        let usersData = JSON.parse(localStorage.getItem('usersData')) || {
+            'admin1111': { password: 'admin2222', isAdmin: true }
+        };
 
         function login() {
-            currentUser = document.getElementById('user-id').value.trim();
-            if (currentUser === 'admin') {
-                isAdmin = true;
-                document.getElementById('admin-tasks').style.display = 'block';
-                document.getElementById('employee-tasks').style.display = 'none';
-            } else if (['1','2','3','4'].includes(currentUser)) {
-                isAdmin = false;
-                document.getElementById('employee-tasks').style.display = 'block';
-                document.getElementById('admin-tasks').style.display = 'none';
-            } else {
-                alert('無効なユーザーIDです。1-4 または admin を入力してください。');
+            const id = document.getElementById('login-id').value.trim();
+            const password = document.getElementById('login-password').value.trim();
+            if (!usersData[id] || usersData[id].password !== password) {
+                alert('ログインIDまたはパスワードが正しくありません。');
                 return;
             }
+            currentUser = id;
+            isAdmin = usersData[id].isAdmin;
             document.getElementById('user-selection').style.display = 'none';
             document.getElementById('attendance').style.display = 'block';
             document.getElementById('tasks').style.display = 'block';
             document.getElementById('pc-usage').style.display = 'block';
             document.getElementById('logout-section').style.display = 'block';
+            if (isAdmin) {
+                document.getElementById('admin-tasks').style.display = 'block';
+                document.getElementById('user-management').style.display = 'block';
+                document.getElementById('employee-tasks').style.display = 'none';
+                loadUserList();
+            } else {
+                document.getElementById('employee-tasks').style.display = 'block';
+                document.getElementById('admin-tasks').style.display = 'none';
+                document.getElementById('user-management').style.display = 'none';
+            }
             loadTasks();
             updateAttendanceStatus();
             updatePCStatus();
@@ -151,9 +172,45 @@
             document.getElementById('tasks').style.display = 'none';
             document.getElementById('pc-usage').style.display = 'none';
             document.getElementById('logout-section').style.display = 'none';
+            document.getElementById('user-management').style.display = 'none';
             document.getElementById('task-list').innerHTML = '';
             document.getElementById('attendance-status').innerHTML = '';
             document.getElementById('pc-status').innerHTML = '';
+            document.getElementById('user-list').innerHTML = '';
+        }
+
+        function setUser() {
+            const newId = document.getElementById('new-user-id').value.trim();
+            const newPassword = document.getElementById('new-user-password').value.trim();
+            if (!newId || !newPassword) {
+                alert('IDとパスワードを入力してください。');
+                return;
+            }
+            if (newId === 'admin1111') {
+                alert('adminのIDは変更できません。');
+                return;
+            }
+            usersData[newId] = { password: newPassword, isAdmin: false };
+            saveUsers();
+            loadUserList();
+            document.getElementById('new-user-id').value = '';
+            document.getElementById('new-user-password').value = '';
+            alert('ユーザーが設定/更新されました。');
+        }
+
+        function loadUserList() {
+            const list = document.getElementById('user-list');
+            list.innerHTML = '<h3>現在の従業員リスト</h3><ul>';
+            Object.keys(usersData).forEach(user => {
+                if (!usersData[user].isAdmin) {
+                    list.innerHTML += `<li>${user} (パスワード: ${usersData[user].password})</li>`;
+                }
+            });
+            list.innerHTML += '</ul>';
+        }
+
+        function saveUsers() {
+            localStorage.setItem('usersData', JSON.stringify(usersData));
         }
 
         // 勤怠管理
@@ -212,13 +269,11 @@
             if (!taskData[currentUser]) taskData[currentUser] = [];
             const list = document.getElementById('task-list');
             list.innerHTML = '';
-            const today = new Date().toDateString();
             taskData[currentUser].filter(task => !task.completed).forEach((task, index) => {
                 const li = document.createElement('li');
                 li.innerHTML = `${task.text} (開始: ${task.date}) <button onclick="completeTask(${index})">完了</button>`;
                 list.appendChild(li);
             });
-            // 未完了タスクを翌日に継続（自動的に今日の日付で表示）
         }
 
         function addEmployeeTask() {
@@ -234,7 +289,7 @@
             if (!isAdmin) return;
             const user = document.getElementById('assign-user-id').value.trim();
             const text = document.getElementById('assign-task').value.trim();
-            if (!text || !['1','2','3','4'].includes(user)) return alert('無効な入力です。');
+            if (!text || !usersData[user] || usersData[user].isAdmin) return alert('無効な従業員IDです。');
             if (!taskData[user]) taskData[user] = [];
             taskData[user].push({ text, date: new Date().toDateString(), completed: false });
             saveTasks();
@@ -304,7 +359,8 @@
 
         // CSVダウンロード関数
         function downloadCSV(csv, filename) {
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const bom = '\uFEFF';
+            const blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
             link.download = filename;
