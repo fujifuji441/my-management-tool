@@ -163,10 +163,15 @@
         async function loadAllData() {
             const snapshot = await database.ref('/').once('value');
             const data = snapshot.val() || {};
-            usersData = data.usersData || { 'admin1111': { password: 'admin2222', isAdmin: true } };
+            usersData = data.usersData || {};
             attendanceData = data.attendanceData || {};
             taskData = data.taskData || {};
             pcUsageData = data.pcUsageData || {};
+            // adminが存在しない場合、強制設定
+            if (!usersData['admin1111']) {
+                usersData['admin1111'] = { password: 'admin2222', isAdmin: true };
+                saveAllData();
+            }
         }
 
         // データ保存関数（Firebaseへ）
@@ -176,19 +181,15 @@
                 attendanceData,
                 taskData,
                 pcUsageData
-            });
+            }).catch(error => alert('データ保存エラー: ' + error.message));
         }
 
-        // アプリ起動時にデータ読み込み
-        loadAllData().then(() => {
-            // 初期データが存在しなければデフォルトadminを設定
-            if (!usersData['admin1111']) {
-                usersData['admin1111'] = { password: 'admin2222', isAdmin: true };
-                saveAllData();
-            }
-        });
+        // アプリ起動時にデータ読み込み（待機）
+        loadAllData();
 
-        function login() {
+        async function login() {
+            // ログイン前にデータロードを待機
+            await loadAllData();
             const id = document.getElementById('login-id').value.trim();
             const password = document.getElementById('login-password').value.trim();
             if (!usersData[id] || usersData[id].password !== password) {
