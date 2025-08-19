@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>小規模事業者向け管理ツール</title>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Firebase SDK追加 -->
+    <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-database.js"></script>
     <style>
         body { 
             font-family: 'Noto Serif JP', serif; 
@@ -109,9 +112,9 @@
         <div id="user-list"></div>
     </section>
 
-    <!-- データ管理 (admin専用) -->
+    <!-- データ管理 (admin専用、バックアップ用) -->
     <section id="data-management">
-        <h2>データ管理 (共有用)</h2>
+        <h2>データ管理 (バックアップ用)</h2>
         <button onclick="exportAllData()">全データエクスポート (JSON)</button>
         <h3>データインポート</h3>
         <input type="file" id="import-file" accept=".json">
@@ -136,14 +139,54 @@
     </section>
 
     <script>
+        // Firebase初期化（あなたのFirebase設定に置き換え）
+        const firebaseConfig = {
+            apiKey: "AIzaSyB9_Py4QYMCIV-6LGeO8u77S6I7yJHgoyA",
+            authDomain: "my-management-app-b0e41.firebaseapp.com",
+            databaseURL: "https://my-management-app-b0e41-default-rtdb.firebaseio.com",
+            projectId: "my-management-app-b0e41",
+            storageBucket: "my-management-app-b0e41.firebasestorage.app",
+            messagingSenderId: "141442170977",
+            appId: "1:141442170977:web:37d72005050f843f796a20"
+        };
+        const app = firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
         let currentUser = null;
         let isAdmin = false;
-        const attendanceData = JSON.parse(localStorage.getItem('attendanceData')) || {};
-        const taskData = JSON.parse(localStorage.getItem('taskData')) || {};
-        const pcUsageData = JSON.parse(localStorage.getItem('pcUsageData')) || {};
-        let usersData = JSON.parse(localStorage.getItem('usersData')) || {
-            'admin1111': { password: 'admin2222', isAdmin: true }
-        };
+        let usersData = {};
+        let attendanceData = {};
+        let taskData = {};
+        let pcUsageData = {};
+
+        // データ読み込み関数（Firebaseから）
+        async function loadAllData() {
+            const snapshot = await database.ref('/').once('value');
+            const data = snapshot.val() || {};
+            usersData = data.usersData || { 'admin1111': { password: 'admin2222', isAdmin: true } };
+            attendanceData = data.attendanceData || {};
+            taskData = data.taskData || {};
+            pcUsageData = data.pcUsageData || {};
+        }
+
+        // データ保存関数（Firebaseへ）
+        function saveAllData() {
+            database.ref('/').set({
+                usersData,
+                attendanceData,
+                taskData,
+                pcUsageData
+            });
+        }
+
+        // アプリ起動時にデータ読み込み
+        loadAllData().then(() => {
+            // 初期データが存在しなければデフォルトadminを設定
+            if (!usersData['admin1111']) {
+                usersData['admin1111'] = { password: 'admin2222', isAdmin: true };
+                saveAllData();
+            }
+        });
 
         function login() {
             const id = document.getElementById('login-id').value.trim();
@@ -204,7 +247,7 @@
                 return;
             }
             usersData[newId] = { password: newPassword, isAdmin: false };
-            saveUsers();
+            saveAllData();
             loadUserList();
             document.getElementById('new-user-id').value = '';
             document.getElementById('new-user-password').value = '';
@@ -220,10 +263,6 @@
                 }
             });
             list.innerHTML += '</ul>';
-        }
-
-        function saveUsers() {
-            localStorage.setItem('usersData', JSON.stringify(usersData));
         }
 
         function exportAllData() {
@@ -251,22 +290,11 @@
             reader.onload = function(e) {
                 try {
                     const importedData = JSON.parse(e.target.result);
-                    if (importedData.usersData) {
-                        usersData = importedData.usersData;
-                        saveUsers();
-                    }
-                    if (importedData.attendanceData) {
-                        Object.assign(attendanceData, importedData.attendanceData);
-                        saveAttendance();
-                    }
-                    if (importedData.taskData) {
-                        Object.assign(taskData, importedData.taskData);
-                        saveTasks();
-                    }
-                    if (importedData.pcUsageData) {
-                        Object.assign(pcUsageData, importedData.pcUsageData);
-                        savePCUsage();
-                    }
+                    usersData = importedData.usersData || usersData;
+                    attendanceData = importedData.attendanceData || attendanceData;
+                    taskData = importedData.taskData || taskData;
+                    pcUsageData = importedData.pcUsageData || pcUsageData;
+                    saveAllData();
                     alert('データがインポートされました。ログインし直してください。');
                     logout();
                 } catch (err) {
@@ -281,7 +309,7 @@
             const now = new Date();
             if (!attendanceData[currentUser]) attendanceData[currentUser] = [];
             attendanceData[currentUser].push({ checkIn: now.toISOString(), checkOut: null });
-            saveAttendance();
+            saveAllData();
             updateAttendanceStatus();
         }
 
@@ -291,7 +319,7 @@
             const last = attendanceData[currentUser][attendanceData[currentUser].length - 1];
             if (last.checkOut) return alert('既に退勤しています。');
             last.checkOut = now.toISOString();
-            saveAttendance();
+            saveAllData();
             updateAttendanceStatus();
         }
 
@@ -305,15 +333,11 @@
             status.innerHTML = `出勤: ${last.checkIn ? new Date(last.checkIn).toLocaleString() : 'なし'}<br>退勤: ${last.checkOut ? new Date(last.checkOut).toLocaleString() : '未退勤'}`;
         }
 
-        function saveAttendance() {
-            localStorage.setItem('attendanceData', JSON.stringify(attendanceData));
-        }
-
         function exportAttendanceCSV() {
             const start = new Date(document.getElementById('start-date-att').value);
             const end = new Date(document.getElementById('end-date-att').value);
             if (isNaN(start) || isNaN(end)) return alert('日付を指定してください。');
-            end.setDate(end.getDate() + 1); // 終了日を含む
+            end.setDate(end.getDate() + 1);
 
             let csv = 'ユーザー,出勤,退勤\n';
             Object.keys(attendanceData).forEach(user => {
@@ -343,7 +367,7 @@
             const text = document.getElementById('new-task').value.trim();
             if (!text) return;
             taskData[currentUser].push({ text, date: new Date().toDateString(), completed: false });
-            saveTasks();
+            saveAllData();
             loadTasks();
             document.getElementById('new-task').value = '';
         }
@@ -355,18 +379,14 @@
             if (!text || !usersData[user] || usersData[user].isAdmin) return alert('無効な従業員IDです。');
             if (!taskData[user]) taskData[user] = [];
             taskData[user].push({ text, date: new Date().toDateString(), completed: false });
-            saveTasks();
+            saveAllData();
             document.getElementById('assign-task').value = '';
         }
 
         function completeTask(index) {
             taskData[currentUser][index].completed = true;
-            saveTasks();
+            saveAllData();
             loadTasks();
-        }
-
-        function saveTasks() {
-            localStorage.setItem('taskData', JSON.stringify(taskData));
         }
 
         // 特定PC作業記録
@@ -374,7 +394,7 @@
             const now = new Date();
             if (!pcUsageData[currentUser]) pcUsageData[currentUser] = [];
             pcUsageData[currentUser].push({ start: now.toISOString(), end: null });
-            savePCUsage();
+            saveAllData();
             updatePCStatus();
         }
 
@@ -384,7 +404,7 @@
             const last = pcUsageData[currentUser][pcUsageData[currentUser].length - 1];
             if (last.end) return alert('既に終了しています。');
             last.end = now.toISOString();
-            savePCUsage();
+            saveAllData();
             updatePCStatus();
         }
 
@@ -396,10 +416,6 @@
             }
             const last = pcUsageData[currentUser][pcUsageData[currentUser].length - 1];
             status.innerHTML = `開始: ${last.start ? new Date(last.start).toLocaleString() : 'なし'}<br>終了: ${last.end ? new Date(last.end).toLocaleString() : '未終了'}`;
-        }
-
-        function savePCUsage() {
-            localStorage.setItem('pcUsageData', JSON.stringify(pcUsageData));
         }
 
         function exportPCCSV() {
