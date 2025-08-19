@@ -54,6 +54,7 @@
         }
         .status-div { font-style: italic; color: #7f8c8d; }
         #user-management { display: none; }
+        #data-management { display: none; }
     </style>
 </head>
 <body>
@@ -108,6 +109,15 @@
         <div id="user-list"></div>
     </section>
 
+    <!-- データ管理 (admin専用) -->
+    <section id="data-management">
+        <h2>データ管理 (共有用)</h2>
+        <button onclick="exportAllData()">全データエクスポート (JSON)</button>
+        <h3>データインポート</h3>
+        <input type="file" id="import-file" accept=".json">
+        <button onclick="importAllData()">インポート</button>
+    </section>
+
     <!-- 特定PC作業記録 -->
     <section id="pc-usage" style="display: none;">
         <h2>特定PC作業記録</h2>
@@ -152,12 +162,14 @@
             if (isAdmin) {
                 document.getElementById('admin-tasks').style.display = 'block';
                 document.getElementById('user-management').style.display = 'block';
+                document.getElementById('data-management').style.display = 'block';
                 document.getElementById('employee-tasks').style.display = 'none';
                 loadUserList();
             } else {
                 document.getElementById('employee-tasks').style.display = 'block';
                 document.getElementById('admin-tasks').style.display = 'none';
                 document.getElementById('user-management').style.display = 'none';
+                document.getElementById('data-management').style.display = 'none';
             }
             loadTasks();
             updateAttendanceStatus();
@@ -173,6 +185,7 @@
             document.getElementById('pc-usage').style.display = 'none';
             document.getElementById('logout-section').style.display = 'none';
             document.getElementById('user-management').style.display = 'none';
+            document.getElementById('data-management').style.display = 'none';
             document.getElementById('task-list').innerHTML = '';
             document.getElementById('attendance-status').innerHTML = '';
             document.getElementById('pc-status').innerHTML = '';
@@ -211,6 +224,56 @@
 
         function saveUsers() {
             localStorage.setItem('usersData', JSON.stringify(usersData));
+        }
+
+        function exportAllData() {
+            const allData = {
+                usersData,
+                attendanceData,
+                taskData,
+                pcUsageData
+            };
+            const json = JSON.stringify(allData, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'app_data.json';
+            link.click();
+        }
+
+        function importAllData() {
+            const fileInput = document.getElementById('import-file');
+            if (!fileInput.files.length) {
+                alert('ファイルを選択してください。');
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+                    if (importedData.usersData) {
+                        usersData = importedData.usersData;
+                        saveUsers();
+                    }
+                    if (importedData.attendanceData) {
+                        Object.assign(attendanceData, importedData.attendanceData);
+                        saveAttendance();
+                    }
+                    if (importedData.taskData) {
+                        Object.assign(taskData, importedData.taskData);
+                        saveTasks();
+                    }
+                    if (importedData.pcUsageData) {
+                        Object.assign(pcUsageData, importedData.pcUsageData);
+                        savePCUsage();
+                    }
+                    alert('データがインポートされました。ログインし直してください。');
+                    logout();
+                } catch (err) {
+                    alert('無効なJSONファイルです。');
+                }
+            };
+            reader.readAsText(fileInput.files[0]);
         }
 
         // 勤怠管理
